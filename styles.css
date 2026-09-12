@@ -52,6 +52,7 @@ input,
 textarea,
 select {
   font-size: 16px;
+  max-width: 100%;
 }
 
 .app-shell {
@@ -406,6 +407,7 @@ h3 {
 .textarea,
 .select {
   width: 100%;
+  min-width: 0;
   min-height: 48px;
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -536,14 +538,56 @@ h3 {
 
 .date-range {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 10px;
+}
+
+.date-range label {
+  min-width: 0;
+}
+
+.date-range .input {
+  display: block;
+  margin-top: 8px;
 }
 
 .chart-card canvas {
   width: 100%;
   height: 270px;
   display: block;
+}
+
+.graph-wide-button {
+  margin-top: 12px;
+}
+
+.wide-sheet {
+  max-height: 94vh;
+}
+
+.wide-chart-block {
+  margin: 18px 0;
+}
+
+.wide-chart-scroll {
+  width: 100%;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.wide-chart-inner {
+  width: 920px;
+  max-width: 240vw;
+}
+
+.wide-chart-inner canvas {
+  width: 100%;
+  height: 320px;
+  display: block;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fffdfa;
 }
 
 .chart-card.tall canvas {
@@ -588,6 +632,10 @@ h3 {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
+  .date-range {
+    grid-template-columns: 1fr 1fr;
+  }
+
   .sheet {
     left: 50%;
     right: auto;
@@ -596,6 +644,10 @@ h3 {
     border-radius: 22px;
     bottom: 14px;
     padding-bottom: 18px;
+  }
+
+  .sheet.wide-sheet {
+    width: min(960px, calc(100vw - 28px));
   }
 }
 

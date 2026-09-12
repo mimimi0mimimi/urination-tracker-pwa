@@ -1,11 +1,15 @@
-const CACHE_NAME = "urination-tracker-v2";
+const CACHE_NAME = "urination-tracker-v4";
 const ASSETS = [
   "./",
   "./index.html",
   "./styles.css",
   "./styles.css?v=2",
+  "./styles.css?v=3",
+  "./styles.css?v=4",
   "./app.js",
   "./app.js?v=2",
+  "./app.js?v=3",
+  "./app.js?v=4",
   "./manifest.json",
   "./icons/icon.svg",
   "./icons/icon-192.png",

@@ -90,24 +90,14 @@ function bindGlobalEvents() {
 
 function handleAction(action, target) {
   if (action === "new-void") {
-    const record = addRecord("void", {}, new Date());
-    openVoidSheet(record.id, true);
+    openVoidSheet(null, true);
   }
   if (action === "new-urge") {
-    const record = addRecord("urge", {}, new Date());
-    openUrgeSheet(record.id, true);
+    openUrgeSheet(null, true);
   }
   if (action === "new-fluid") openFluidSheet(null, true);
-  if (action === "sleep-start") {
-    addRecord("sleep_start", {}, new Date());
-    showToast("就寝を記録しました");
-    render();
-  }
-  if (action === "sleep-end") {
-    addRecord("sleep_end", {}, new Date());
-    showToast("起床を記録しました");
-    render();
-  }
+  if (action === "sleep-start") openSleepSheet(null, "sleep_start");
+  if (action === "sleep-end") openSleepSheet(null, "sleep_end");
   if (action === "report-mode") {
     app.reportMode = target.dataset.mode;
     syncReportRange();
@@ -115,9 +105,9 @@ function handleAction(action, target) {
   }
   if (action === "export") exportJson();
   if (action === "import") document.getElementById("importFile").click();
-  if (action === "sample") loadSampleData();
   if (action === "clear") clearAllData();
   if (action === "print") window.print();
+  if (action === "open-wide-graphs") openWideGraphs();
 }
 
 function loadData() {
@@ -250,6 +240,7 @@ function renderGraphsView() {
     <section class="card">
       <label class="field-title" for="graphDate">表示する日</label>
       <input id="graphDate" class="input" type="date" value="${escapeAttr(app.graphDate)}">
+      <button type="button" class="soft-button full-button graph-wide-button" data-action="open-wide-graphs">横長で見る</button>
     </section>
     ${chartCard("timeline", "排尿タイムライン")}
     ${chartCard("intervals", "排尿間隔グラフ")}
@@ -322,15 +313,14 @@ function renderSettings() {
       <h2>データ管理</h2>
       <div class="settings-list">
         <button type="button" class="soft-button full-button" data-action="export">JSONをエクスポート</button>
-        <button type="button" class="soft-button full-button" data-action="import">JSONをインポート</button>
+        <button type="button" class="soft-button full-button" data-action="import">JSONを追加インポート</button>
         <input id="importFile" class="hidden" type="file" accept="application/json,.json">
-        <button type="button" class="soft-button full-button" data-action="sample">サンプルデータを読み込む</button>
         <button type="button" class="danger-button full-button" data-action="clear">全データ削除</button>
       </div>
     </section>
     <section class="card">
       <h2>保存形式</h2>
-      <p class="muted small">記録はこのiPhoneのブラウザ内LocalStorageに保存されます。機種変更やSafariのデータ削除に備えて、必要なときにJSONバックアップを保存してください。</p>
+      <p class="muted small">記録はこのiPhoneのブラウザ内LocalStorageに保存されます。JSONインポートは既存データに追加し、同じ記録はスキップします。</p>
     </section>
   `;
 }
@@ -412,14 +402,14 @@ function openEditor(id) {
 }
 
 function openVoidSheet(id, isNew) {
-  const record = getRecord(id);
+  const record = id ? getRecord(id) : draftRecord("void");
   if (!record) return;
   const data = record.data || {};
   sheetContent.innerHTML = `
     <div class="sheet-title-row">
       <div>
         <h2 id="sheetTitle">排尿記録</h2>
-        <p class="muted small">${isNew ? "時刻を記録しました。必要な項目だけ選べます。" : "記録を編集できます。"}</p>
+        <p class="muted small">${isNew ? "必要な項目だけ選んで、保存で記録します。" : "記録を編集できます。"}</p>
       </div>
       <button type="button" class="plain-button" id="closeSheetButton">閉じる</button>
     </div>
@@ -438,25 +428,26 @@ function openVoidSheet(id, isNew) {
       <textarea id="note" class="textarea" placeholder="気になることがあれば">${escapeHtml(data.note || "")}</textarea>
     </div>
     <div class="form-actions">
-      <button type="button" class="danger-button" data-delete="${escapeAttr(id)}">削除</button>
+      ${id ? `<button type="button" class="danger-button" data-delete="${escapeAttr(id)}">削除</button>` : `<button type="button" class="plain-button" id="cancelVoid">キャンセル</button>`}
       <button type="button" class="primary-save" id="saveVoid">保存</button>
     </div>
   `;
   openSheet();
   bindSelectableControls();
   document.getElementById("closeSheetButton").addEventListener("click", closeSheet);
+  document.getElementById("cancelVoid")?.addEventListener("click", closeSheet);
   document.getElementById("saveVoid").addEventListener("click", () => {
-    updateRecord(id, {
-      timestamp: readDateTime(record.timestamp),
-      data: {
-        volumeLabel: selectedValue("volumeLabel"),
-        measuredMl: readNumber("measuredMl"),
-        urgeBefore: selectedValue("urgeBefore"),
-        afterFeeling: selectedValue("afterFeeling"),
-        pain: selectedValue("pain"),
-        note: document.getElementById("note").value.trim()
-      }
-    });
+    const timestamp = readDateTime(record.timestamp);
+    const payload = {
+      volumeLabel: selectedValue("volumeLabel"),
+      measuredMl: readNumber("measuredMl"),
+      urgeBefore: selectedValue("urgeBefore"),
+      afterFeeling: selectedValue("afterFeeling"),
+      pain: selectedValue("pain"),
+      note: document.getElementById("note").value.trim()
+    };
+    if (id) updateRecord(id, { timestamp, data: payload });
+    else addRecord("void", payload, new Date(timestamp));
     closeSheet();
     showToast("記録しました");
     render();
@@ -464,7 +455,7 @@ function openVoidSheet(id, isNew) {
 }
 
 function openUrgeSheet(id, isNew) {
-  const record = getRecord(id);
+  const record = id ? getRecord(id) : draftRecord("urge");
   if (!record) return;
   const data = record.data || {};
   const voidOptions = relatedVoidOptions(record);
@@ -472,7 +463,7 @@ function openUrgeSheet(id, isNew) {
     <div class="sheet-title-row">
       <div>
         <h2 id="sheetTitle">尿意の記録</h2>
-        <p class="muted small">${isNew ? "時刻を記録しました。尿意だけでも残せます。" : "その後の変化も追記できます。"}</p>
+        <p class="muted small">${isNew ? "尿意だけでも、保存で記録できます。" : "その後の変化も追記できます。"}</p>
       </div>
       <button type="button" class="plain-button" id="closeSheetButton">閉じる</button>
     </div>
@@ -492,23 +483,24 @@ function openUrgeSheet(id, isNew) {
       <textarea id="note" class="textarea" placeholder="気になることがあれば">${escapeHtml(data.note || "")}</textarea>
     </div>
     <div class="form-actions">
-      <button type="button" class="danger-button" data-delete="${escapeAttr(id)}">削除</button>
+      ${id ? `<button type="button" class="danger-button" data-delete="${escapeAttr(id)}">削除</button>` : `<button type="button" class="plain-button" id="cancelUrge">キャンセル</button>`}
       <button type="button" class="primary-save" id="saveUrge">保存</button>
     </div>
   `;
   openSheet();
   bindSelectableControls();
   document.getElementById("closeSheetButton").addEventListener("click", closeSheet);
+  document.getElementById("cancelUrge")?.addEventListener("click", closeSheet);
   document.getElementById("saveUrge").addEventListener("click", () => {
-    updateRecord(id, {
-      timestamp: readDateTime(record.timestamp),
-      data: {
-        urgeLevel: selectedValue("urgeLevel"),
-        outcome: selectedValue("outcome"),
-        linkedVoidId: document.getElementById("linkedVoidId").value,
-        note: document.getElementById("note").value.trim()
-      }
-    });
+    const timestamp = readDateTime(record.timestamp);
+    const payload = {
+      urgeLevel: selectedValue("urgeLevel"),
+      outcome: selectedValue("outcome"),
+      linkedVoidId: document.getElementById("linkedVoidId").value,
+      note: document.getElementById("note").value.trim()
+    };
+    if (id) updateRecord(id, { timestamp, data: payload });
+    else addRecord("urge", payload, new Date(timestamp));
     closeSheet();
     showToast("記録しました");
     render();
@@ -517,17 +509,18 @@ function openUrgeSheet(id, isNew) {
 
 function openFluidSheet(id, isNew) {
   const record = id ? getRecord(id) : null;
-  const data = record ? record.data || {} : { drinkType: "水" };
+  const draft = record || draftRecord("fluid", { drinkType: "水" });
+  const data = draft.data || {};
   sheetContent.innerHTML = `
     <div class="sheet-title-row">
       <div>
         <h2 id="sheetTitle">水分記録</h2>
-        <p class="muted small">${isNew ? "量を選ぶとすぐ記録できます。" : "記録を編集できます。"}</p>
+        <p class="muted small">${isNew ? "量を選んで、保存で記録します。" : "記録を編集できます。"}</p>
       </div>
       <button type="button" class="plain-button" id="closeSheetButton">閉じる</button>
     </div>
 
-    ${record ? datetimeField(record) : ""}
+    ${datetimeField(draft)}
     ${choiceField("飲み物の種類", "drinkType", DRINK_OPTIONS, data.drinkType || "水")}
     <div class="field">
       <div class="field-title">よく使う量</div>
@@ -554,15 +547,17 @@ function openFluidSheet(id, isNew) {
   document.getElementById("cancelFluid")?.addEventListener("click", closeSheet);
   document.querySelectorAll(".quick-ml").forEach((button) => {
     button.addEventListener("click", () => {
-      saveFluid(record, Number(button.dataset.ml));
+      document.getElementById("amountMl").value = button.dataset.ml;
+      document.querySelectorAll(".quick-ml").forEach((item) => item.classList.remove("selected"));
+      button.classList.add("selected");
     });
   });
   document.getElementById("saveFluid").addEventListener("click", () => {
-    saveFluid(record, readNumber("amountMl"));
+    saveFluid(record, readNumber("amountMl"), readDateTime(draft.timestamp));
   });
 }
 
-function saveFluid(existingRecord, amountMl) {
+function saveFluid(existingRecord, amountMl, timestamp) {
   if (!amountMl || amountMl < 0) {
     alert("水分量を入力してください。");
     return;
@@ -574,42 +569,55 @@ function saveFluid(existingRecord, amountMl) {
   };
   if (existingRecord) {
     updateRecord(existingRecord.id, {
-      timestamp: readDateTime(existingRecord.timestamp),
+      timestamp,
       data: payload
     });
   } else {
-    addRecord("fluid", payload, new Date());
+    addRecord("fluid", payload, new Date(timestamp));
   }
   closeSheet();
   showToast("記録しました");
   render();
 }
 
-function openSleepSheet(id) {
-  const record = getRecord(id);
+function openSleepSheet(id, type) {
+  const record = id ? getRecord(id) : draftRecord(type);
   if (!record) return;
+  const isNew = !id;
   sheetContent.innerHTML = `
     <div class="sheet-title-row">
       <div>
         <h2 id="sheetTitle">${record.type === "sleep_start" ? "就寝" : "起床"}の記録</h2>
-        <p class="muted small">時刻を編集できます。</p>
+        <p class="muted small">${isNew ? "保存で記録します。" : "時刻を編集できます。"}</p>
       </div>
       <button type="button" class="plain-button" id="closeSheetButton">閉じる</button>
     </div>
     ${datetimeField(record)}
     <div class="form-actions">
-      <button type="button" class="danger-button" data-delete="${escapeAttr(id)}">削除</button>
+      ${id ? `<button type="button" class="danger-button" data-delete="${escapeAttr(id)}">削除</button>` : `<button type="button" class="plain-button" id="cancelSleep">キャンセル</button>`}
       <button type="button" class="primary-save" id="saveSleep">保存</button>
     </div>
   `;
   openSheet();
   document.getElementById("closeSheetButton").addEventListener("click", closeSheet);
+  document.getElementById("cancelSleep")?.addEventListener("click", closeSheet);
   document.getElementById("saveSleep").addEventListener("click", () => {
-    updateRecord(id, { timestamp: readDateTime(record.timestamp) });
+    const timestamp = readDateTime(record.timestamp);
+    if (id) updateRecord(id, { timestamp });
+    else addRecord(record.type, {}, new Date(timestamp));
     closeSheet();
     showToast("記録しました");
     render();
   });
+}
+
+function draftRecord(type, data = {}) {
+  return {
+    id: "",
+    type,
+    timestamp: new Date().toISOString(),
+    data: { ...data }
+  };
 }
 
 function datetimeField(record) {
@@ -685,6 +693,7 @@ function openSheet() {
 
 function closeSheet() {
   sheet.classList.add("hidden");
+  sheet.classList.remove("wide-sheet");
   sheetBackdrop.classList.add("hidden");
   sheetContent.innerHTML = "";
 }
@@ -703,6 +712,48 @@ function renderGraphs() {
   drawIntervals("intervals", records, range.start, range.end);
   drawUrgency("urgency", records, range.start, range.end);
   drawFluidVoid("fluidvoid", records, range.start, range.end);
+}
+
+function openWideGraphs() {
+  sheet.classList.add("wide-sheet");
+  sheetContent.innerHTML = `
+    <div class="sheet-title-row">
+      <div>
+        <h2 id="sheetTitle">横長グラフ</h2>
+        <p class="muted small">${escapeHtml(formatDateKey(app.graphDate))}</p>
+      </div>
+      <button type="button" class="plain-button" id="closeSheetButton">閉じる</button>
+    </div>
+    ${wideChart("wideTimeline", "排尿タイムライン")}
+    ${wideChart("wideIntervals", "排尿間隔グラフ")}
+    ${wideChart("wideUrgency", "尿意グラフ")}
+    ${wideChart("wideFluidVoid", "水分摂取と排尿")}
+  `;
+  openSheet();
+  document.getElementById("closeSheetButton").addEventListener("click", closeSheet);
+  requestAnimationFrame(renderWideGraphs);
+}
+
+function wideChart(id, title) {
+  return `
+    <section class="wide-chart-block">
+      <h3>${escapeHtml(title)}</h3>
+      <div class="wide-chart-scroll">
+        <div class="wide-chart-inner">
+          <canvas id="${escapeAttr(id)}" aria-label="${escapeAttr(title)}"></canvas>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderWideGraphs() {
+  const range = dayRange(app.graphDate);
+  const records = recordsBetween(range.start, range.end);
+  drawTimeline("wideTimeline", records, range.start, range.end, true);
+  drawIntervals("wideIntervals", records, range.start, range.end);
+  drawUrgency("wideUrgency", records, range.start, range.end);
+  drawFluidVoid("wideFluidVoid", records, range.start, range.end);
 }
 
 function renderReportCharts() {
@@ -1073,11 +1124,26 @@ function importJson(file) {
       const parsed = JSON.parse(String(reader.result));
       const imported = parsed.data || parsed;
       if (!imported || !Array.isArray(imported.records)) throw new Error("records not found");
-      if (!confirm("現在のデータをインポートしたJSONで置き換えますか？")) return;
-      app.data = { version: 1, records: imported.records };
+      if (!confirm("JSONの記録を現在のデータに追加します。同じ記録はスキップします。")) return;
+      const existing = new Set(app.data.records.map(recordSignature));
+      let added = 0;
+      let skipped = 0;
+      imported.records.forEach((record) => {
+        const normalized = normalizeImportedRecord(record);
+        if (!normalized) return;
+        const signature = recordSignature(normalized);
+        if (existing.has(signature)) {
+          skipped += 1;
+          return;
+        }
+        if (app.data.records.some((item) => item.id === normalized.id)) normalized.id = makeId();
+        app.data.records.push(normalized);
+        existing.add(signature);
+        added += 1;
+      });
       sortRecords();
       saveData();
-      showToast("インポートしました");
+      showToast(`${added}件追加、${skipped}件スキップ`);
       render();
     } catch {
       alert("JSONを読み込めませんでした。");
@@ -1086,27 +1152,39 @@ function importJson(file) {
   reader.readAsText(file);
 }
 
-function loadSampleData() {
-  if (!confirm("サンプルデータを現在のデータに追加しますか？")) return;
-  const base = new Date();
-  const day2 = new Date(base);
-  day2.setHours(0, 0, 0, 0);
-  const day1 = new Date(day2);
-  day1.setDate(day1.getDate() - 1);
-  const samples = [
-    { day: day1, entries: [["18:49", "少量"], ["19:03", "少量"], ["19:15", "ごく少量"], ["19:35", "少量"], ["20:02", "少量"], ["21:10", "中等量"], ["21:32", "少量"], ["21:42", "少量"], ["23:05", "中等量"], ["23:18", "少量"], ["23:31", "少量"]] },
-    { day: day2, entries: [["01:04", "中等量"], ["08:01", "中等量"], ["09:09", "少量"], ["10:40", "中等量"], ["11:11", "少量"], ["12:50", "中等量"], ["13:38", "中等量"], ["13:43", "少量"], ["13:59", "少量"], ["14:13", "少量"], ["14:19", "ごく少量"], ["14:44", "少量"]] }
-  ];
-  samples.forEach((day) => {
-    day.entries.forEach(([time, volumeLabel]) => {
-      const date = new Date(day.day);
-      const [hours, minutes] = time.split(":").map(Number);
-      date.setHours(hours, minutes, 0, 0);
-      addRecord("void", { volumeLabel }, date);
-    });
+function normalizeImportedRecord(record) {
+  if (!record || !record.type || !record.timestamp) return null;
+  const date = new Date(record.timestamp);
+  if (Number.isNaN(date.getTime())) return null;
+  const now = new Date().toISOString();
+  return {
+    id: record.id || makeId(),
+    type: record.type,
+    timestamp: date.toISOString(),
+    data: record.data && typeof record.data === "object" ? { ...record.data } : {},
+    createdAt: record.createdAt || now,
+    updatedAt: record.updatedAt || now
+  };
+}
+
+function recordSignature(record) {
+  return JSON.stringify({
+    type: record.type,
+    timestamp: new Date(record.timestamp).toISOString(),
+    data: stableData(record.data || {})
   });
-  showToast("サンプルを追加しました");
-  render();
+}
+
+function stableData(value) {
+  if (Array.isArray(value)) return value.map(stableData);
+  if (value && typeof value === "object") {
+    return Object.keys(value).sort().reduce((result, key) => {
+      const normalized = stableData(value[key]);
+      if (normalized !== "") result[key] = normalized;
+      return result;
+    }, {});
+  }
+  return value == null ? "" : value;
 }
 
 function clearAllData() {
