@@ -1,4 +1,5 @@
 const STORAGE_KEY = "urinationTracker.data.v1";
+const APP_VERSION = "1.1.4";
 
 const VOLUME_OPTIONS = ["ごく少量", "少量", "中等量", "多量"];
 const AFTER_OPTIONS = ["スッキリ", "少し尿意あり", "尿意あり", "変わらない"];
@@ -57,6 +58,11 @@ function bindGlobalEvents() {
   });
 
   view.addEventListener("click", (event) => {
+    const dateWrap = event.target.closest(".date-input-wrap");
+    if (dateWrap) {
+      openNativeDatePicker(dateWrap);
+      return;
+    }
     const target = event.target.closest("[data-action], [data-edit], [data-delete]");
     if (!target) return;
 
@@ -65,8 +71,16 @@ function bindGlobalEvents() {
     if (target.dataset.delete) deleteRecord(target.dataset.delete);
   });
 
+  sheetContent.addEventListener("click", (event) => {
+    const dateWrap = event.target.closest(".date-input-wrap");
+    if (dateWrap) openNativeDatePicker(dateWrap);
+  });
+
   view.addEventListener("change", (event) => {
     const target = event.target;
+    if (target.classList.contains("date-native") || target.classList.contains("datetime-native")) {
+      updateDateDisplay(target);
+    }
     if (target.id === "graphDate") {
       app.graphDate = target.value || todayKey();
       renderGraphs();
@@ -84,6 +98,13 @@ function bindGlobalEvents() {
     if (target.id === "importFile") {
       importJson(target.files && target.files[0]);
       target.value = "";
+    }
+  });
+
+  sheetContent.addEventListener("change", (event) => {
+    const target = event.target;
+    if (target.classList.contains("date-native") || target.classList.contains("datetime-native")) {
+      updateDateDisplay(target);
     }
   });
 }
@@ -238,11 +259,10 @@ function renderHistory() {
 function renderGraphsView() {
   view.innerHTML = `
     <section class="card">
-      <label class="field-title" for="graphDate">表示する日</label>
-      <input id="graphDate" class="input" type="date" value="${escapeAttr(app.graphDate)}">
+      ${datePickerField("表示する日", "graphDate", app.graphDate)}
       <button type="button" class="soft-button full-button graph-wide-button" data-action="open-wide-graphs">横長で見る</button>
     </section>
-    ${chartCard("timeline", "排尿タイムライン")}
+    ${chartCard("timeline", "排尿量タイムライン")}
     ${chartCard("intervals", "排尿間隔グラフ")}
     ${chartCard("urgency", "尿意グラフ")}
     ${chartCard("fluidvoid", "水分摂取と排尿")}
@@ -266,8 +286,8 @@ function renderReport() {
         <button type="button" data-action="report-mode" data-mode="custom" class="${app.reportMode === "custom" ? "active" : ""}">期間指定</button>
       </div>
       <div class="date-range" style="margin-top: 12px;">
-        <label class="field-title">開始<input id="reportStart" class="input" type="date" value="${escapeAttr(app.reportStart)}"></label>
-        <label class="field-title">終了<input id="reportEnd" class="input" type="date" value="${escapeAttr(app.reportEnd)}"></label>
+        ${datePickerField("開始", "reportStart", app.reportStart)}
+        ${datePickerField("終了", "reportEnd", app.reportEnd)}
       </div>
       <button type="button" class="soft-button full-button" style="margin-top: 12px;" data-action="print">PDF保存・印刷</button>
     </section>
@@ -300,7 +320,7 @@ function renderReport() {
       `).join("") : `<p class="empty">この期間の記録はありません。</p>`}
     </section>
 
-    ${chartCard("reportTimeline", "排尿タイムライン", "tall")}
+    ${chartCard("reportTimeline", "排尿量タイムライン", "tall")}
     ${chartCard("reportIntervals", "排尿間隔グラフ")}
     ${chartCard("reportUrgency", "尿意グラフ")}
   `;
@@ -321,6 +341,9 @@ function renderSettings() {
     <section class="card">
       <h2>保存形式</h2>
       <p class="muted small">記録はこのiPhoneのブラウザ内LocalStorageに保存されます。JSONインポートは既存データに追加し、同じ記録はスキップします。</p>
+    </section>
+    <section class="subtle-card">
+      <p class="muted small">バージョン ${escapeHtml(APP_VERSION)}</p>
     </section>
   `;
 }
@@ -621,12 +644,49 @@ function draftRecord(type, data = {}) {
 }
 
 function datetimeField(record) {
+  const value = toDateTimeInput(record.timestamp);
   return `
     <div class="field">
-      <label for="recordTime">時刻</label>
-      <input id="recordTime" class="input" type="datetime-local" value="${escapeAttr(toDateTimeInput(record.timestamp))}">
+      <label class="field-title" for="recordTime">時刻</label>
+      <div class="date-input-wrap">
+        <input id="recordTime" class="date-native datetime-native" type="datetime-local" value="${escapeAttr(value)}" aria-label="時刻">
+        <div class="date-display" data-date-display-for="recordTime" aria-hidden="true">${escapeHtml(formatDateTimeInputDisplay(value))}</div>
+      </div>
     </div>
   `;
+}
+
+function datePickerField(label, id, value) {
+  return `
+    <div class="date-picker">
+      <label class="field-title" for="${escapeAttr(id)}">${escapeHtml(label)}</label>
+      <div class="date-input-wrap">
+        <input id="${escapeAttr(id)}" class="date-native" type="date" value="${escapeAttr(value)}" aria-label="${escapeAttr(label)}">
+        <div class="date-display" data-date-display-for="${escapeAttr(id)}" aria-hidden="true">${escapeHtml(formatDateInputDisplay(value))}</div>
+      </div>
+    </div>
+  `;
+}
+
+function updateDateDisplay(input) {
+  const display = document.querySelector(`[data-date-display-for="${cssEscape(input.id)}"]`);
+  if (!display) return;
+  display.textContent = input.type === "datetime-local"
+    ? formatDateTimeInputDisplay(input.value)
+    : formatDateInputDisplay(input.value);
+}
+
+function openNativeDatePicker(wrap) {
+  const input = wrap.querySelector("input");
+  if (!input) return;
+  input.focus();
+  if (typeof input.showPicker === "function") {
+    try {
+      input.showPicker();
+    } catch {
+      input.click();
+    }
+  }
 }
 
 function choiceField(label, name, options, value) {
@@ -724,7 +784,7 @@ function openWideGraphs() {
       </div>
       <button type="button" class="plain-button" id="closeSheetButton">閉じる</button>
     </div>
-    ${wideChart("wideTimeline", "排尿タイムライン")}
+    ${wideChart("wideTimeline", "排尿量タイムライン")}
     ${wideChart("wideIntervals", "排尿間隔グラフ")}
     ${wideChart("wideUrgency", "尿意グラフ")}
     ${wideChart("wideFluidVoid", "水分摂取と排尿")}
@@ -769,21 +829,28 @@ function drawTimeline(canvasId, records, start, end, singleDay) {
   const canvas = setupCanvas(canvasId);
   if (!canvas) return;
   const { ctx, width, height } = canvas;
-  chartFrame(ctx, width, height, start, end, "排尿", { singleDay });
+  chartFrame(ctx, width, height, start, end, "尿量", {
+    singleDay,
+    yCategories: [
+      { value: 1, label: "ごく少" },
+      { value: 2, label: "少量" },
+      { value: 3, label: "中等" },
+      { value: 4, label: "多量" }
+    ]
+  });
   drawSleepBands(ctx, width, height, start, end);
-  const voids = records.filter((record) => record.type === "void");
+  const voids = records.filter((record) => record.type === "void").sort(byTime);
   if (!voids.length) return chartEmpty(ctx, width, height);
+  const baseY = height - chartPad().bottom;
+  const barW = timelineBarWidth(voids.length, width);
   voids.forEach((record) => {
     const x = timeX(record.timestamp, start, end, width);
-    const y = height * 0.52;
-    const size = VOLUME_SIZE[record.data?.volumeLabel] || 7;
-    ctx.beginPath();
-    ctx.arc(x, y, size, 0, Math.PI * 2);
-    ctx.fillStyle = "#9f6f52";
+    const level = volumeLevel(record.data?.volumeLabel);
+    const y = valueY(level, 0, 4, height);
+    const barHeight = Math.max(4, baseY - y);
+    ctx.fillStyle = "rgba(159, 111, 82, 0.82)";
+    roundedRect(ctx, x - barW / 2, y, barW, barHeight, Math.min(2, barW / 2));
     ctx.fill();
-    ctx.strokeStyle = "#fffaf3";
-    ctx.lineWidth = 2;
-    ctx.stroke();
   });
 }
 
@@ -791,7 +858,6 @@ function drawIntervals(canvasId, records, start, end) {
   const canvas = setupCanvas(canvasId);
   if (!canvas) return;
   const { ctx, width, height } = canvas;
-  chartFrame(ctx, width, height, start, end, "分");
   const voids = records.filter((record) => record.type === "void").sort(byTime);
   const points = [];
   voids.forEach((record, index) => {
@@ -802,9 +868,16 @@ function drawIntervals(canvasId, records, start, end) {
       value: Math.round((new Date(record.timestamp) - new Date(prev.timestamp)) / 60000)
     });
   });
-  if (!points.length) return chartEmpty(ctx, width, height);
   const max = Math.max(60, ...points.map((point) => point.value));
-  drawLinePoints(ctx, points.map((point) => ({ x: point.x, y: valueY(point.value, 0, max, height), value: point.value })), "#8f9270");
+  chartFrame(ctx, width, height, start, end, "前回から 分", { yTicks: intervalTicks(max) });
+  drawSleepBands(ctx, width, height, start, end);
+  if (!points.length) return chartEmpty(ctx, width, height);
+  drawBars(ctx, points.map((point) => ({
+    x: point.x,
+    y: valueY(point.value, 0, max, height),
+    value: point.value,
+    color: "#8f9270"
+  })), height, barWidth(points.length, width), "#8f9270");
 }
 
 function drawUrgency(canvasId, records, start, end) {
@@ -812,6 +885,7 @@ function drawUrgency(canvasId, records, start, end) {
   if (!canvas) return;
   const { ctx, width, height } = canvas;
   chartFrame(ctx, width, height, start, end, "尿意 0-5", { yTicks: [0, 1, 2, 3, 4, 5] });
+  drawSleepBands(ctx, width, height, start, end);
   const points = [];
   records.sort(byTime).forEach((record) => {
     if (record.type === "urge" && record.data?.urgeLevel !== "" && record.data?.urgeLevel != null) {
@@ -822,7 +896,7 @@ function drawUrgency(canvasId, records, start, end) {
     }
   });
   if (!points.length) return chartEmpty(ctx, width, height);
-  drawLinePoints(ctx, points, "#bd8068", false);
+  drawScatterPoints(ctx, points, "#bd8068");
 }
 
 function drawFluidVoid(canvasId, records, start, end) {
@@ -830,6 +904,7 @@ function drawFluidVoid(canvasId, records, start, end) {
   if (!canvas) return;
   const { ctx, width, height } = canvas;
   chartFrame(ctx, width, height, start, end, "水分 / 排尿");
+  drawSleepBands(ctx, width, height, start, end);
   const fluids = records.filter((record) => record.type === "fluid");
   const voids = records.filter((record) => record.type === "void");
   if (!fluids.length && !voids.length) return chartEmpty(ctx, width, height);
@@ -841,10 +916,14 @@ function drawFluidVoid(canvasId, records, start, end) {
   });
   voids.forEach((record) => {
     const x = timeX(record.timestamp, start, end, width);
+    const size = VOLUME_SIZE[record.data?.volumeLabel] || 7;
     ctx.beginPath();
-    ctx.arc(x, height * 0.68, VOLUME_SIZE[record.data?.volumeLabel] || 7, 0, Math.PI * 2);
+    ctx.arc(x, height * 0.68, size, 0, Math.PI * 2);
     ctx.fillStyle = "#9f6f52";
     ctx.fill();
+    ctx.strokeStyle = "#fffaf3";
+    ctx.lineWidth = 3;
+    ctx.stroke();
   });
 }
 
@@ -869,6 +948,7 @@ function chartFrame(ctx, width, height, start, end, yLabel, options = {}) {
   ctx.fillRect(0, 0, width, height);
   drawTimeGrid(ctx, width, height, start, end, options);
   if (options.yTicks) drawYLabels(ctx, width, height, options.yTicks);
+  if (options.yCategories) drawYCategoryLabels(ctx, width, height, options.yCategories);
   ctx.strokeStyle = "#e3d4c2";
   ctx.lineWidth = 1;
   ctx.beginPath();
@@ -922,6 +1002,29 @@ function drawYLabels(ctx, width, height, ticks) {
     ctx.stroke();
     ctx.fillStyle = "#7d6e62";
     ctx.fillText(String(tick), pad.left - 7, y);
+  });
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+}
+
+function drawYCategoryLabels(ctx, width, height, categories) {
+  const pad = chartPad();
+  ctx.textAlign = "right";
+  ctx.textBaseline = "middle";
+  ctx.font = "11px -apple-system, BlinkMacSystemFont, sans-serif";
+  const values = categories.map((item) => item.value);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  categories.forEach((item) => {
+    const y = valueY(item.value, min, max, height);
+    ctx.strokeStyle = "rgba(227, 212, 194, 0.55)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(pad.left, y);
+    ctx.lineTo(width - pad.right, y);
+    ctx.stroke();
+    ctx.fillStyle = "#7d6e62";
+    ctx.fillText(item.label, pad.left - 7, y);
   });
   ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
@@ -989,6 +1092,46 @@ function drawLinePoints(ctx, points, color, connect = true) {
   });
 }
 
+function drawBars(ctx, points, height, width, fallbackColor) {
+  const pad = chartPad();
+  const baseY = height - pad.bottom;
+  points.forEach((point) => {
+    const barHeight = Math.max(3, baseY - point.y);
+    ctx.fillStyle = point.color || fallbackColor;
+    roundedRect(ctx, point.x - width / 2, point.y, width, barHeight, Math.min(3, width / 2));
+    ctx.fill();
+  });
+}
+
+function drawScatterPoints(ctx, points, fallbackColor) {
+  points.forEach((point) => {
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, 5.5, 0, Math.PI * 2);
+    ctx.fillStyle = point.color || fallbackColor;
+    ctx.fill();
+    ctx.strokeStyle = "#fffaf3";
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+  });
+}
+
+function timelineBarWidth(count, canvasWidth) {
+  if (count > 40 || canvasWidth < 390) return 3;
+  if (count > 20) return 4;
+  return 5;
+}
+
+function barWidth(count, canvasWidth) {
+  if (count > 45 || canvasWidth < 390) return 3;
+  if (count > 24) return 4;
+  return 5;
+}
+
+function intervalTicks(max) {
+  const roundedMax = Math.max(60, Math.ceil(max / 30) * 30);
+  return [0, Math.round(roundedMax / 2), roundedMax];
+}
+
 function chartEmpty(ctx, width, height) {
   ctx.fillStyle = "#7d6e62";
   ctx.font = "14px -apple-system, BlinkMacSystemFont, sans-serif";
@@ -998,7 +1141,7 @@ function chartEmpty(ctx, width, height) {
 }
 
 function chartPad() {
-  return { left: 38, right: 18, top: 34, bottom: 50 };
+  return { left: 58, right: 18, top: 34, bottom: 50 };
 }
 
 function timeX(time, start, end, width) {
@@ -1012,6 +1155,14 @@ function valueY(value, min, max, height) {
   const pad = chartPad();
   const pct = (value - min) / Math.max(1, max - min);
   return height - pad.bottom - clamp(pct, 0, 1) * (height - pad.top - pad.bottom);
+}
+
+function volumeLevel(label) {
+  if (label === "ごく少量") return 1;
+  if (label === "少量") return 2;
+  if (label === "中等量") return 3;
+  if (label === "多量") return 4;
+  return 2;
 }
 
 function roundedRect(ctx, x, y, width, height, radius) {
@@ -1263,6 +1414,19 @@ function formatDateKey(key) {
 function formatDateShort(input) {
   const date = input instanceof Date ? input : new Date(input);
   return `${date.getMonth() + 1}/${date.getDate()}`;
+}
+
+function formatDateInputDisplay(value) {
+  if (!value) return "";
+  const [year, month, day] = value.split("-");
+  if (!year || !month || !day) return value;
+  return `${year}/${month}/${day}`;
+}
+
+function formatDateTimeInputDisplay(value) {
+  if (!value) return "";
+  const [datePart, timePart] = value.split("T");
+  return `${formatDateInputDisplay(datePart)} ${timePart || ""}`.trim();
 }
 
 function formatTime(input) {
